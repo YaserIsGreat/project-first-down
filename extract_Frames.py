@@ -1,8 +1,8 @@
 import os
 import subprocess
 
-input_folder = r"C:\Users\lamsa\Desktop\nfl project\nflTrimmedAll22"
-output_folder = r"C:\Users\lamsa\Desktop\nfl project\frames"
+input_folder = r""
+output_folder = r"" 
 
 os.makedirs(output_folder, exist_ok=True)
 
