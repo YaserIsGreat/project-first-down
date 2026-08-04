@@ -121,6 +121,24 @@ python predict.py --source nflTrimmedAll22/ramsOffence03.mp4
 
 Annotated video is written to `nflOutput/`.
 
+## Play Analysis
+
+`analyze_play.py` turns tracked helmet coordinates into a read of the play. No second model — it is all geometry over the detector's output.
+
+```bash
+python analyze_play.py --source nflTrimmedAll22/ramsOffence05.mp4 --slow 0.6
+```
+
+It reports which team has the ball, the offensive and defensive shape, pre-snap motion with the path taken, and the snap frame.
+
+**Offense is identified by stillness, not by counting the line.** Both teams put five men at the front, so the front cannot separate them. The offense must be set before the snap and the defense need not be, and that shows up directly in the coordinates — on one clip the Rams average 5 px of pre-snap movement against the Lions' 20 px. This picks the correct team on every clip tested.
+
+**Everything is measured on the field, not on the screen.** `field_motion.py` estimates a homography from each frame back to the snap by tracking features on the turf, with players masked out since they move independently of the camera. This matters more than it sounds: the all-22 camera zooms hard once the ball is away, measured at 1.00×–2.54× on one clip and 0.75×–3.34× on another. Without it, a zoom registers as every player accelerating outward at once, which corrupts both snap detection and motion detection — and overlays slide off the grass.
+
+**Snap detection looks for contrast, not a threshold.** A first-jump-above-baseline rule put the snap at frame 302 of 358 on one clip, latching onto a late camera pan and inverting the entire read. Scoring candidates on quiet-then-active contrast, and requiring the run-up to sit below the clip's median motion, moved it to frame 196.
+
+Reliability is uneven and worth stating plainly. Team identification, snap detection and motion detection lean on large, robust differences and hold up. The split between wide and off-the-line players is the weakest rule: it reads a spread formation correctly but says little about a bunched one. Route trails depend on a single track surviving the pile, so they fragment under occlusion and are off by default.
+
 ## Repo Layout
 
 Source footage, extracted frames, Roboflow exports, training runs and model weights are all gitignored — this repo holds code only. `yolov8n.pt` downloads automatically on first use.

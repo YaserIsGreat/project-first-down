@@ -77,6 +77,8 @@ def parse_args():
                    help="field: pin overlays to the grass through pans and zooms")
     p.add_argument("--show-los", action="store_true",
                    help="draw the line of scrimmage; off by default as it crowds the play")
+    p.add_argument("--show-routes", action="store_true",
+                   help="draw route trails; off by default as they tangle after the snap")
     return p.parse_args()
 
 
@@ -282,11 +284,25 @@ def analyse_formation(off_pts, def_pts, axis, lateral, helmet_w):
         else:
             off_line.append(t)
 
+    # Defensive shape, by depth off the ball. Roughly 2.5 helmet widths to the
+    # yard here, so these bands are about 2 yards and about 8 yards -- the
+    # usual split between a front, second level and deep help.
+    front, box, deep = [], [], []
+    for t, s in s_def.items():
+        depth = abs(s - los)
+        if depth < 5 * helmet_w:
+            front.append(t)
+        elif depth < 20 * helmet_w:
+            box.append(t)
+        else:
+            deep.append(t)
+
     all_lat = list(lat.values()) + [float(np.dot(p, lateral)) for p in def_pts.values()]
     return {
         "los": los, "line_ids": line_ids,
         "wide_left": wide_left, "wide_right": wide_right, "off_line": off_line,
         "wide": wide_left + wide_right,
+        "def_front": front, "def_box": box, "def_deep": deep,
         "lat_min": min(all_lat), "lat_max": max(all_lat),
     }
 
@@ -328,30 +344,38 @@ def field_path(positions, tid, lo, hi):
 # drawing
 # --------------------------------------------------------------------------
 
-def panel(img, lines, org=(30, 30)):
-    """Read-out panel, sized off the frame so it stays legible at any resolution."""
+def panel(img, lines, where="left", top=30, font_mul=1.0, border=(130, 130, 130)):
+    """Read-out panel pinned left, right or centre, sized off the frame width."""
     scale = img.shape[1] / 1920.0
-    font = 0.92 * scale
-    step = int(46 * scale)
-    pad = int(22 * scale)
-    thick = max(2, int(round(2.2 * scale)))
+    font = 0.95 * scale * font_mul
+    step = int(48 * scale * font_mul)
+    pad = int(24 * scale)
+    thick = max(2, int(round(2.4 * scale * font_mul)))
 
     width = pad * 2 + max(
         cv2.getTextSize(t, cv2.FONT_HERSHEY_SIMPLEX, font, thick)[0][0] for t, _ in lines
     )
     height = pad + step * len(lines)
-    x, y = int(org[0] * scale), int(org[1] * scale)
+    margin = int(34 * scale)
+    y = int(top * scale)
+    if where == "left":
+        x = margin
+    elif where == "right":
+        x = img.shape[1] - width - margin
+    else:
+        x = (img.shape[1] - width) // 2
 
     overlay = img.copy()
     cv2.rectangle(overlay, (x, y), (x + width, y + height), C_PANEL, -1)
-    cv2.addWeighted(overlay, 0.74, img, 0.26, 0, img)
-    cv2.rectangle(img, (x, y), (x + width, y + height), (130, 130, 130), max(1, int(2 * scale)))
+    cv2.addWeighted(overlay, 0.76, img, 0.24, 0, img)
+    cv2.rectangle(img, (x, y), (x + width, y + height), border, max(1, int(2 * scale)))
 
     for i, (text, colour) in enumerate(lines):
         pt = (x + pad, y + int(step * (i + 0.78)))
         cv2.putText(img, text, pt, cv2.FONT_HERSHEY_SIMPLEX, font,
                     (0, 0, 0), thick + 3, cv2.LINE_AA)
         cv2.putText(img, text, pt, cv2.FONT_HERSHEY_SIMPLEX, font, colour, thick, cv2.LINE_AA)
+    return y + height
 
 
 def label(img, text, pt, colour, scale=0.5):
@@ -407,6 +431,18 @@ def render(args, frames, names, info, homs):
     motion_path = field_path(positions, motion["id"], motion["start"], snap) if motion else []
     route_hist = defaultdict(list)
 
+    # Put each team's read on the side of the frame it actually lines up on.
+    off_right = True
+    if form is not None:
+        ox = [d["x"] for d in frames[max(0, snap - 6)]
+              if info["teams"].get(d["id"]) == off_cls]
+        dx = [d["x"] for d in frames[max(0, snap - 6)]
+              if info["teams"].get(d["id"]) == def_cls]
+        if ox and dx:
+            off_right = statistics.fmean(ox) > statistics.fmean(dx)
+    off_side = "right" if off_right else "left"
+    def_side = "left" if off_right else "right"
+
     idx = 0
     while True:
         ok, img = cap.read()
@@ -444,17 +480,20 @@ def render(args, frames, names, info, homs):
                     if not pre and tid in positions[idx]:
                         route_hist[tid].append(positions[idx][tid])
 
-            if motion and tid == motion["id"] and pre and idx >= motion["start"]:
-                label(img, "MOTION", (p1[0] - 6, p1[1] - 6), C_MOTION, 0.55)
+            if motion and tid == motion["id"] and idx >= motion["start"]:
+                # Ring the man in motion; the trail and the centre call-out
+                # already say what is happening, so no extra text here.
+                cv2.rectangle(img, p1, p2, C_MOTION, 3)
 
-        for tid, pts in route_hist.items():
-            # Only trail players still being detected, otherwise a lost track
-            # leaves its line hanging across the frame for the rest of the play.
-            if tid not in positions[idx]:
-                continue
-            trail = to_screen(Hinv, np.array(pts[-args.route_len:]))
-            if trail is not None and len(trail) > 1 and visible(trail, img.shape):
-                cv2.polylines(img, [trail], False, C_ROUTE, 2, cv2.LINE_AA)
+        if args.show_routes:
+            for tid, pts in route_hist.items():
+                # Only trail players still detected, or a lost track leaves its
+                # line hanging across the frame for the rest of the play.
+                if tid not in positions[idx]:
+                    continue
+                trail = to_screen(Hinv, np.array(pts[-args.route_len:]))
+                if trail is not None and len(trail) > 1 and visible(trail, img.shape):
+                    cv2.polylines(img, [trail], False, C_ROUTE, 2, cv2.LINE_AA)
 
         if motion and motion_path:
             upto = np.array([p for fi, p in motion_path if fi <= idx])
@@ -465,23 +504,33 @@ def render(args, frames, names, info, homs):
                                 C_MOTION, 2, cv2.LINE_AA, tipLength=0.04)
                 cv2.circle(img, tuple(trail[0]), 6, C_MOTION, 2, cv2.LINE_AA)
 
-        lines = [(f"OFFENSE  {off_name}", C_OFFENSE),
-                 (f"DEFENSE  {def_name}", C_DEFENSE)]
         if form is not None:
-            n_off = len(form["line_ids"]) + len(form["wide"]) + len(form["off_line"])
-            lines.append((f"PRE-SNAP READ   {n_off} offense tracked", C_LINE))
-            lines.append((f"ON THE LINE  {len(form['line_ids'])}", C_LINE))
-            lines.append((f"WIDE {len(form['wide_left'])}L/{len(form['wide_right'])}R"
-                          f"   OFF-LINE {len(form['off_line'])}", C_LINE))
+            panel(img, [(f"OFFENSE  {off_name}", C_OFFENSE),
+                        (f"ON THE LINE   {len(form['line_ids'])}", C_LINE),
+                        (f"OFF THE LINE  {len(form['off_line']) + len(form['wide'])}", C_LINE)],
+                  where=off_side, border=C_OFFENSE)
+            panel(img, [(f"DEFENSE  {def_name}", C_DEFENSE),
+                        (f"FRONT  {len(form['def_front'])}", C_LINE),
+                        (f"BOX    {len(form['def_box'])}", C_LINE),
+                        (f"DEEP   {len(form['def_deep'])}", C_LINE)],
+                  where=def_side, border=C_DEFENSE)
+
+        # Snap state, centred at the top.
         if pre:
-            lines.append(("PRE-SNAP", C_LOS))
-            if motion and idx >= motion["start"]:
-                lines.append(("MOTION DETECTED", C_MOTION))
+            snap_line, snap_col = "PRE-SNAP", C_LOS
+        elif idx - snap < int(fps * 0.8):
+            snap_line, snap_col = "SNAP", (255, 255, 255)
         else:
-            lines.append((f"SNAP  +{(idx - snap) / fps:0.1f}s", C_LOS))
-        if info["zoom"] is not None:
-            lines.append((f"camera zoom  {info['zoom'][idx]:.2f}x", (170, 170, 170)))
-        panel(img, lines)
+            snap_line, snap_col = f"SNAP  +{(idx - snap) / fps:0.1f}s", C_LOS
+        bottom = panel(img, [(snap_line, snap_col)], where="centre",
+                       font_mul=1.25 if snap_line == "SNAP" else 1.0,
+                       border=snap_col)
+
+        # Motion call-out, directly under the snap box so it cannot be missed.
+        if motion and pre and idx >= motion["start"]:
+            panel(img, [("MOTION", C_MOTION)], where="centre",
+                  top=(bottom + int(14 * img.shape[1] / 1920.0)) / (img.shape[1] / 1920.0),
+                  font_mul=1.15, border=C_MOTION)
 
         writer.write(img)
         idx += 1
