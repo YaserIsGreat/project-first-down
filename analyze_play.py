@@ -75,6 +75,8 @@ def parse_args():
                         "trails are drawn on the field, so a zoom magnifies them too")
     p.add_argument("--anchor", choices=["field", "screen"], default="field",
                    help="field: pin overlays to the grass through pans and zooms")
+    p.add_argument("--show-los", action="store_true",
+                   help="draw the line of scrimmage; off by default as it crowds the play")
     return p.parse_args()
 
 
@@ -326,16 +328,30 @@ def field_path(positions, tid, lo, hi):
 # drawing
 # --------------------------------------------------------------------------
 
-def panel(img, lines, org=(24, 24), width=470):
-    h = 20 + 30 * len(lines)
-    x, y = org
+def panel(img, lines, org=(30, 30)):
+    """Read-out panel, sized off the frame so it stays legible at any resolution."""
+    scale = img.shape[1] / 1920.0
+    font = 0.92 * scale
+    step = int(46 * scale)
+    pad = int(22 * scale)
+    thick = max(2, int(round(2.2 * scale)))
+
+    width = pad * 2 + max(
+        cv2.getTextSize(t, cv2.FONT_HERSHEY_SIMPLEX, font, thick)[0][0] for t, _ in lines
+    )
+    height = pad + step * len(lines)
+    x, y = int(org[0] * scale), int(org[1] * scale)
+
     overlay = img.copy()
-    cv2.rectangle(overlay, (x, y), (x + width, y + h), C_PANEL, -1)
-    cv2.addWeighted(overlay, 0.62, img, 0.38, 0, img)
-    cv2.rectangle(img, (x, y), (x + width, y + h), (90, 90, 90), 1)
+    cv2.rectangle(overlay, (x, y), (x + width, y + height), C_PANEL, -1)
+    cv2.addWeighted(overlay, 0.74, img, 0.26, 0, img)
+    cv2.rectangle(img, (x, y), (x + width, y + height), (130, 130, 130), max(1, int(2 * scale)))
+
     for i, (text, colour) in enumerate(lines):
-        cv2.putText(img, text, (x + 14, y + 30 + 30 * i),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.62, colour, 2, cv2.LINE_AA)
+        pt = (x + pad, y + int(step * (i + 0.78)))
+        cv2.putText(img, text, pt, cv2.FONT_HERSHEY_SIMPLEX, font,
+                    (0, 0, 0), thick + 3, cv2.LINE_AA)
+        cv2.putText(img, text, pt, cv2.FONT_HERSHEY_SIMPLEX, font, colour, thick, cv2.LINE_AA)
 
 
 def label(img, text, pt, colour, scale=0.5):
@@ -405,7 +421,7 @@ def render(args, frames, names, info, homs):
             except np.linalg.LinAlgError:
                 Hinv = None
 
-        if los_seg is not None:
+        if los_seg is not None and args.show_los:
             seg = to_screen(Hinv, los_seg)
             if visible(seg, img.shape):
                 cv2.line(img, tuple(seg[0]), tuple(seg[1]), C_LOS, 2, cv2.LINE_AA)
