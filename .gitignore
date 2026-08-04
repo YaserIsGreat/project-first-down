@@ -216,3 +216,44 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# ---------------------------------------------------------------------------
+# Project First Down
+# ---------------------------------------------------------------------------
+
+# Source footage and anything extracted from it. Broadcast footage is not ours
+# to redistribute, and the frames are several hundred MB of PNG.
+nflTrimmedAll22/
+frames/
+*.mp4
+*.mov
+*.mkv
+*.avi
+
+# Baseline and inference output
+nflOutput/
+
+# Roboflow exports. The annotated set lives in Roboflow; this is a local copy.
+dataset/
+datasets/
+*.zip
+
+# Ultralytics training and prediction runs
+runs/
+
+# Model weights. yolov8n.pt downloads on demand; fine-tuned weights are build
+# artefacts of a training run, not source.
+*.pt
+*.onnx
+*.engine
+
+# OpenShot editing project used to cut the plays out of the source broadcast
+*.osp
+*_assets/
+
+# Local progress tracker
+progressbar-stats.md
+
+# Windows
+desktop.ini
+Thumbs.db
