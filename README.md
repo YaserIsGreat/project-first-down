@@ -44,9 +44,28 @@ Raw all-22 NFL footage (Lions vs Rams) was sourced and 8 individual plays were c
 
 Roboflow's own export ships a 108/2/2 split, which is why the download step rewrites it.
 
+## Results
+
+First fine-tune of `yolov8n` at `imgsz=1280`, batch 8, on an RTX 3060 Laptop GPU (6 GB). Early-stopped at epoch 52 of 100, best at epoch 32, about 7 minutes wall clock.
+
+Evaluated on the held-out test clip (`ramsOffence01`, 18 images, 381 boxes) — a play the model never saw in training, and which took no part in early stopping or weight selection:
+
+| Metric | Test | Validation |
+|---|---|---|
+| mAP@50 | **0.882** | 0.792 |
+| mAP@50-95 | **0.395** | 0.305 |
+| Precision | 0.885 | 0.817 |
+| Recall | 0.829 | 0.732 |
+
+Per class on test: `lions_helmet` mAP@50 0.889, `rams_helmet` mAP@50 0.875 — no meaningful bias toward either team.
+
+Test scores above validation, which is the opposite of the usual pattern. With clip-level splits and only one clip per split, that difference is per-clip difficulty rather than anything meaningful about generalisation. Treat both numbers as directional until more clips are annotated.
+
+On a completely unseen clip (`ramsOffence04`, never annotated), the model averages **16 helmets per frame** against a nominal 22 on the field. Sideline players are correctly ignored, an effect of deleting sideline false positives during annotation.
+
 ## Currently In Progress
 
-The first fine-tuning run on the full annotated set. Annotation is incremental: an early model trained on a small subset is already being used to pre-label new frames in Roboflow, and corrections are fed back into the dataset for the next round.
+Expanding the dataset. `ramsOffence04`, `ramsOffence05` and most of `ramsOffence06` are still unannotated — 67 frames. Those are the next targets for the model-assisted labelling loop, now that there is a model worth pre-labelling with.
 
 ## Setup
 
@@ -108,9 +127,9 @@ Source footage, extracted frames, Roboflow exports, training runs and model weig
 
 ## Next Steps
 
-1. Export the annotated set from Roboflow and run the first fine-tune
-2. Validate reliable 22-helmet detection per frame on held-out clips
-3. Set up the model-assisted labelling loop — pre-label, correct, retrain
+1. Annotate the remaining 67 frames using the trained model to pre-label
+2. Close the recall gap from 16 detected helmets per frame toward 22
+3. Retrain on the expanded set and compare against the numbers above
 4. Extract per-frame helmet coordinates and separate by team
 5. Add field-boundary filtering so sideline players are excluded at inference
 6. Build the pre-snap formation classifier from coordinate geometry

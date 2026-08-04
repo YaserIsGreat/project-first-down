@@ -45,6 +45,16 @@ def parse_args():
                         help="'0' for the first GPU, 'cpu' to force CPU (default: auto)")
     parser.add_argument("--save-txt", action="store_true",
                         help="also write per-frame YOLO-format label files")
+    # Ultralytics scales label text to the frame, not to the box. With ~20
+    # helmet-sized boxes per frame the default text is large enough to bury
+    # the play underneath it, so draw thin and keep labels off by default.
+    parser.add_argument("--line-width", type=int, default=1,
+                        help="bounding box line thickness; also drives label text size")
+    parser.add_argument("--labels", action="store_true",
+                        help="draw class names on each box; off by default because box "
+                             "colour already distinguishes the two teams")
+    parser.add_argument("--conf-text", action="store_true",
+                        help="include the confidence score when --labels is used")
     return parser.parse_args()
 
 
@@ -84,6 +94,9 @@ def run_clip(model, clip, args, device):
         iou=args.iou,
         imgsz=args.imgsz,
         device=device,
+        line_width=args.line_width,
+        show_labels=args.labels,
+        show_conf=args.labels and args.conf_text,
         verbose=False,
     )
 
