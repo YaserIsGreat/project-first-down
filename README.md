@@ -23,11 +23,30 @@ Splitting by team rather than by offence/defence means the label stays correct n
 
 ## What Has Been Done
 
-Raw all-22 NFL footage (Lions vs Rams) was sourced and 8 individual plays were clipped using ffmpeg. A script extracts frames from those clips, producing 187 frames for annotation. A pretrained YOLOv8n COCO baseline was run across the clips to establish a detection benchmark before any fine-tuning.
+Raw all-22 NFL footage (Lions vs Rams) was sourced and 8 individual plays were clipped using ffmpeg. A script extracts frames from those clips at 2 fps, producing 187 frames. A pretrained YOLOv8n COCO baseline was run across the clips to establish a detection benchmark before any fine-tuning.
+
+## Dataset
+
+112 of the 187 extracted frames are annotated, carrying **2,207 helmet boxes** — 1,107 `lions_helmet` and 1,100 `rams_helmet`, an even split. Annotation covers 6 of the 8 clips:
+
+| Clip | Extracted | Annotated |
+|---|---|---|
+| lionsOffence01 | 16 | 16 |
+| lionsOffence02 | 35 | 35 |
+| ramsOffence01 | 18 | 18 |
+| ramsOffence02 | 24 | 24 |
+| ramsOffence03 | 26 | 18 |
+| ramsOffence04 | 24 | 0 |
+| ramsOffence05 | 19 | 0 |
+| ramsOffence06 | 25 | 1 |
+
+**Splits are assigned by clip, not by image.** Frames are sampled at 2 fps, so consecutive frames within a play are near duplicates. Splitting them randomly would put near-identical images on both sides of the train/validation boundary and inflate mAP into something meaningless. `download_dataset.py` holds out whole clips instead, so no play appears in more than one split. Both teams are visible in every frame, so class balance survives the coarser split.
+
+Roboflow's own export ships a 108/2/2 split, which is why the download step rewrites it.
 
 ## Currently In Progress
 
-187 frames are annotated in Roboflow and ready to export. The first fine-tuning run has not happened yet — everything so far is the pretrained COCO baseline. Annotation is incremental: once an initial model is trained it will be used to pre-label new frames, and corrections will be fed back into the dataset for the next training round.
+The first fine-tuning run on the full annotated set. Annotation is incremental: an early model trained on a small subset is already being used to pre-label new frames in Roboflow, and corrections are fed back into the dataset for the next round.
 
 ## Setup
 
@@ -57,7 +76,17 @@ This should print a version ending in `+cu126` and `True`. If it prints `+cpu`, 
 python extract_Frames.py --fps 2
 ```
 
-**Train** on a Roboflow YOLOv8 export unzipped into `./dataset`:
+**Download the dataset** from Roboflow into `./dataset`, re-split by clip and with `data.yaml` paths corrected:
+
+```bash
+python download_dataset.py --workspace WORKSPACE --project PROJECT --version 3
+```
+
+Needs `ROBOFLOW_API_KEY` in the environment. A pre-signed export link from the Roboflow UI works too, via `--link`, with no key required.
+
+Two fixes are applied on every download, both of which otherwise have to be redone by hand each re-export. Roboflow writes `data.yaml` paths like `../train/images`, relative to the zip rather than to wherever it was unpacked — ultralytics resolves that one directory too high and reports it as a missing dataset. And the split is rebuilt by clip, as described above.
+
+**Train** on the downloaded dataset:
 
 ```bash
 python train.py
