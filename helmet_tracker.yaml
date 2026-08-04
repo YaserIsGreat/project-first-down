@@ -1,0 +1,13 @@
+# ByteTrack settings tuned for small, flickering helmet detections.
+#
+# With stock settings a helmet buried in the pile is dropped immediately and
+# given a fresh id when it reappears: 22 players produced 227 track ids on a
+# 10 second clip, which makes per-player trajectories useless. These settings
+# cut that to 95 and roughly quadruple median track lifetime.
+tracker_type: bytetrack
+track_high_thresh: 0.20   # keep associating weaker helmet detections
+track_low_thresh: 0.05    # second association pass catches near-misses
+new_track_thresh: 0.45    # harder to spawn a brand new id
+track_buffer: 90          # 3s at 30fps, so a track survives being buried
+match_thresh: 0.85
+fuse_score: True

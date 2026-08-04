@@ -232,6 +232,7 @@ frames/
 
 # Baseline and inference output
 nflOutput/
+analysis/
 
 # Roboflow exports. The annotated set lives in Roboflow; this is a local copy.
 dataset/
