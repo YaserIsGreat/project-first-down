@@ -1,0 +1,24 @@
+# Project First Down
+#
+#   python -m venv .venv
+#   .venv\Scripts\activate
+#   pip install -r requirements.txt
+#
+# The torch pins carry a "+cu126" local version, which only the PyTorch index
+# below can satisfy. That is deliberate. Installing ultralytics on its own
+# resolves torch from PyPI and silently replaces a CUDA build with the CPU
+# build, leaving torch.cuda.is_available() False for no obvious reason.
+# Pinning the local version makes that impossible.
+#
+# For a CPU-only machine, drop the --extra-index-url line and the "+cu126"
+# suffixes. Expect training at imgsz=1280 to take hours rather than minutes.
+#
+# cu126 wheels need roughly 5 GB of free disk once unpacked.
+
+--extra-index-url https://download.pytorch.org/whl/cu126
+
+torch==2.13.0+cu126
+torchvision==0.28.0+cu126
+
+ultralytics==8.4.115
+opencv-python==5.0.0.93
