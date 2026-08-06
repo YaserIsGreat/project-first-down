@@ -137,7 +137,13 @@ It reports which team has the ball, the offensive and defensive shape, pre-snap 
 
 **Snap detection looks for contrast, not a threshold.** A first-jump-above-baseline rule put the snap at frame 302 of 358 on one clip, latching onto a late camera pan and inverting the entire read. Scoring candidates on quiet-then-active contrast, and requiring the run-up to sit below the clip's median motion, moved it to frame 196.
 
-Reliability is uneven and worth stating plainly. Team identification, snap detection and motion detection lean on large, robust differences and hold up. The split between wide and off-the-line players is the weakest rule: it reads a spread formation correctly but says little about a bunched one. Route trails depend on a single track surviving the pile, so they fragment under occlusion and are off by default.
+Reliability is uneven and worth stating plainly. Team identification, snap detection and motion detection lean on large, robust differences and hold up: offense correct on 8 of 8 clips, motion found on all 3 clips that have it and reported on none of the 5 that do not.
+
+**Formation counts are switched off, because they are not yet measuring anything.** The "on the line" count takes the five offensive players nearest the ball and counts them, so it returns 5 on every play by construction — it cannot report the 7 that are genuinely on the line when two receivers line up there. The defensive depth bands are closer to real, but use pixel thresholds, and a helmet shrinks with distance up the frame, so the same threshold means different yardage in different parts of the picture; linebackers land in the same bucket as the front.
+
+Both need the field registered to its actual yard lines first. With real yards, "on the line" becomes *within a yard of the ball* — a measurement that can return 7 — and defenders separate at their true depths instead of at guessed pixel distances. That is the next piece of work, and `--show-formation` re-enables the current version for anyone who wants to see how far off it is.
+
+Route trails depend on a single track surviving the pile, so they fragment under occlusion and are off by default behind `--show-routes`.
 
 ## Repo Layout
 

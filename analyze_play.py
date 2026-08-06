@@ -68,8 +68,8 @@ def parse_args():
     p.add_argument("--conf", type=float, default=0.25)
     p.add_argument("--imgsz", type=int, default=1280)
     p.add_argument("--device", default=None)
-    p.add_argument("--slow", type=float, default=0.7,
-                   help="playback speed multiplier")
+    p.add_argument("--slow", type=float, default=1.0,
+                   help="playback speed multiplier; 1.0 keeps real time")
     p.add_argument("--route-len", type=int, default=32,
                    help="frames of route trail kept behind each skill player; "
                         "trails are drawn on the field, so a zoom magnifies them too")
@@ -79,6 +79,12 @@ def parse_args():
                    help="draw the line of scrimmage; off by default as it crowds the play")
     p.add_argument("--show-routes", action="store_true",
                    help="draw route trails; off by default as they tangle after the snap")
+    p.add_argument("--show-formation", action="store_true",
+                   help="show the formation counts. Off by default because they are not "
+                        "yet trustworthy: the on-the-line count always returns 5 by "
+                        "construction, and the defensive depth bands use pixel thresholds "
+                        "that mean different yardages at different points in the frame. "
+                        "Both need calibration to real yards first")
     return p.parse_args()
 
 
@@ -472,13 +478,16 @@ def render(args, frames, names, info, homs):
             cv2.rectangle(img, p1, p2, colour, 2)
 
             if form is not None and team == off_cls:
-                if tid in form["line_ids"]:
-                    cv2.circle(img, (int(x), int(y + bh)), 4, C_LINE, -1, cv2.LINE_AA)
-                else:
-                    if tid in form["wide"]:
+                on_line = tid in form["line_ids"]
+                # These markings come from the same uncalibrated formation
+                # logic as the counts panel, so they follow the same switch.
+                if args.show_formation:
+                    if on_line:
+                        cv2.circle(img, (int(x), int(y + bh)), 4, C_LINE, -1, cv2.LINE_AA)
+                    elif tid in form["wide"]:
                         label(img, "WR", (p1[0], p1[1] - 6), C_ROUTE)
-                    if not pre and tid in positions[idx]:
-                        route_hist[tid].append(positions[idx][tid])
+                if not on_line and not pre and tid in positions[idx]:
+                    route_hist[tid].append(positions[idx][tid])
 
             if motion and tid == motion["id"] and idx >= motion["start"]:
                 # Ring the man in motion; the trail and the centre call-out
@@ -504,27 +513,22 @@ def render(args, frames, names, info, homs):
                                 C_MOTION, 2, cv2.LINE_AA, tipLength=0.04)
                 cv2.circle(img, tuple(trail[0]), 6, C_MOTION, 2, cv2.LINE_AA)
 
-        if form is not None:
-            panel(img, [(f"OFFENSE  {off_name}", C_OFFENSE),
-                        (f"ON THE LINE   {len(form['line_ids'])}", C_LINE),
-                        (f"OFF THE LINE  {len(form['off_line']) + len(form['wide'])}", C_LINE)],
-                  where=off_side, border=C_OFFENSE)
-            panel(img, [(f"DEFENSE  {def_name}", C_DEFENSE),
-                        (f"FRONT  {len(form['def_front'])}", C_LINE),
-                        (f"BOX    {len(form['def_box'])}", C_LINE),
-                        (f"DEEP   {len(form['def_deep'])}", C_LINE)],
-                  where=def_side, border=C_DEFENSE)
+        off_lines = [(f"OFFENSE  {off_name}", C_OFFENSE)]
+        def_lines = [(f"DEFENSE  {def_name}", C_DEFENSE)]
+        if form is not None and args.show_formation:
+            off_lines += [(f"ON THE LINE   {len(form['line_ids'])}", C_LINE),
+                          (f"OFF THE LINE  {len(form['off_line']) + len(form['wide'])}", C_LINE)]
+            def_lines += [(f"FRONT  {len(form['def_front'])}", C_LINE),
+                          (f"BOX    {len(form['def_box'])}", C_LINE),
+                          (f"DEEP   {len(form['def_deep'])}", C_LINE)]
+        panel(img, off_lines, where=off_side, border=C_OFFENSE)
+        panel(img, def_lines, where=def_side, border=C_DEFENSE)
 
-        # Snap state, centred at the top.
-        if pre:
-            snap_line, snap_col = "PRE-SNAP", C_LOS
-        elif idx - snap < int(fps * 0.8):
-            snap_line, snap_col = "SNAP", (255, 255, 255)
-        else:
-            snap_line, snap_col = f"SNAP  +{(idx - snap) / fps:0.1f}s", C_LOS
+        # Snap state, centred at the top. No running clock: it measured nothing
+        # the viewer needs and read as decoration.
+        snap_line, snap_col = ("PRE-SNAP", C_LOS) if pre else ("SNAP", (255, 255, 255))
         bottom = panel(img, [(snap_line, snap_col)], where="centre",
-                       font_mul=1.25 if snap_line == "SNAP" else 1.0,
-                       border=snap_col)
+                       font_mul=1.25 if not pre else 1.0, border=snap_col)
 
         # Motion call-out, directly under the snap box so it cannot be missed.
         if motion and pre and idx >= motion["start"]:
