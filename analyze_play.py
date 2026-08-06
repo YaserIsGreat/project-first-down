@@ -313,19 +313,67 @@ def analyse_formation(off_pts, def_pts, axis, lateral, helmet_w):
     }
 
 
-def detect_motion(steps, positions, teams, off_cls, snap):
-    lo = max(1, snap - 90)
-    disp = net_displacement(steps, lo, snap)
-    off = {t: d for t, d in disp.items() if teams.get(t) == off_cls}
-    if len(off) < 4:
+def settled_frames(steps, teams, off_cls, snap, helmet_w):
+    """Which pre-snap frames have the offence standing still.
+
+    Uses the median speed across the offence, which one man in motion barely
+    shifts, so a settled team still reads as settled while he runs. A set
+    player is essentially stationary, so the threshold is a small fraction of
+    a helmet width per frame rather than a bare pixel count.
+    """
+    curve = []
+    for s in steps[:snap]:
+        vals = [float(np.linalg.norm(v)) for t, v in s.items() if teams.get(t) == off_cls]
+        curve.append(statistics.median(vals) if vals else float("inf"))
+    curve = smooth(curve, 4)
+    thresh = max(0.06 * helmet_w, 0.5)
+    return [c < thresh for c in curve]
+
+
+def detect_motion(steps, teams, off_cls, snap, helmet_w):
+    """One offensive player travelling while the rest of his team is set.
+
+    Displacement is accumulated only over frames where the offence is settled,
+    rather than over a window. A fixed lookback missed motion that starts
+    early, and any single contiguous window either cuts the motion short or
+    reaches back far enough to include eleven men walking up from the huddle.
+    Masking by settled frames sidesteps the choice: huddle movement is
+    excluded because the team is not set during it, and motion is caught
+    whenever it happens.
+    """
+    mask = settled_frames(steps, teams, off_cls, snap, helmet_w)
+    if sum(mask) < 20:
+        mask = [i >= max(1, snap - 120) for i in range(len(mask))]
+    n_settled = sum(mask)
+
+    acc = defaultdict(lambda: np.zeros(2))
+    seen = defaultdict(int)
+    for i, ok in enumerate(mask):
+        if not ok:
+            continue
+        for tid, v in steps[i].items():
+            if teams.get(tid) != off_cls:
+                continue
+            acc[tid] += v
+            seen[tid] += 1
+
+    need = max(8, n_settled * 0.25)
+    disp = {t: float(np.linalg.norm(acc[t])) for t in acc if seen[t] >= need}
+    if len(disp) < 4:
         return None
-    med = statistics.median(off.values())
-    tid, best = max(off.items(), key=lambda kv: kv[1])
-    if best < max(med * 4.0, 45.0):
+
+    med = statistics.median(disp.values())
+    tid, best = max(disp.items(), key=lambda kv: kv[1])
+    # Floor scales with helmet size. The old fixed 45 px rejected a clear 8.9x
+    # outlier purely for being small in a reference frame that was zoomed out.
+    if best < max(med * 4.0, 1.4 * helmet_w):
         return None
 
     start, run = snap, 0
-    for i in range(lo, snap):
+    for i in range(len(mask)):
+        if not mask[i]:
+            run = 0
+            continue
         v = steps[i].get(tid)
         if v is not None and float(np.linalg.norm(v)) > 0.8:
             run += 1
@@ -334,7 +382,8 @@ def detect_motion(steps, positions, teams, off_cls, snap):
                 break
         else:
             run = 0
-    return {"id": tid, "start": max(lo, start), "dist": best, "median": med}
+    return {"id": tid, "start": max(0, start), "dist": best, "median": med,
+            "settled": n_settled}
 
 
 def field_path(positions, tid, lo, hi):
@@ -592,7 +641,9 @@ def main():
     axis, lateral = play_axis({"off": list(off_pts.values()), "def": list(def_pts.values())})
     form = (analyse_formation(off_pts, def_pts, axis, lateral, helmet_w)
             if axis is not None else None)
-    motion = detect_motion(steps, positions, teams, off_cls, snap)
+    # helmet_w is measured near the snap, and the field frame is anchored on
+    # the snap, so screen and field scale agree there.
+    motion = detect_motion(steps, teams, off_cls, snap, helmet_w)
 
     print(f"\nsnap at frame {snap} of {len(frames)}")
     if zoom:
