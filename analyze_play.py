@@ -46,6 +46,9 @@ DEFAULT_WEIGHTS = REPO_ROOT / "runs" / "helmet" / "yolov8n_1280_v3" / "weights" 
 DEFAULT_TRACKER = REPO_ROOT / "helmet_tracker.yaml"
 DEFAULT_OUTPUT = REPO_ROOT / "analysis"
 
+# How far before the snap to look for motion, in frames (about 6s at 30fps).
+MOTION_LOOKBACK = 180
+
 # BGR
 C_OFFENSE = (80, 220, 90)
 C_DEFENSE = (60, 140, 255)
@@ -327,7 +330,12 @@ def settled_frames(steps, teams, off_cls, snap, helmet_w):
         curve.append(statistics.median(vals) if vals else float("inf"))
     curve = smooth(curve, 4)
     thresh = max(0.06 * helmet_w, 0.5)
-    return [c < thresh for c in curve]
+    # Also bound how far back to look. Pre-snap motion runs within a few
+    # seconds of the snap; a player strolling to his spot ten seconds out is
+    # walking up from the huddle, and on one clip that walk was 857 px, which
+    # swamped the real motion entirely.
+    earliest = snap - MOTION_LOOKBACK
+    return [c < thresh and i >= earliest for i, c in enumerate(curve)]
 
 
 def detect_motion(steps, teams, off_cls, snap, helmet_w):
