@@ -52,10 +52,10 @@ Evaluated on the held-out test clip (`ramsOffence01`, 18 images, 381 boxes) — 
 
 | Metric | Test | Validation |
 |---|---|---|
-| mAP@50 | **0.882** | 0.792 |
-| mAP@50-95 | **0.395** | 0.305 |
+| mAP@50 | **0.882** | 0.788 |
+| mAP@50-95 | **0.395** | 0.308 |
 | Precision | 0.885 | 0.817 |
-| Recall | 0.829 | 0.732 |
+| Recall | 0.829 | 0.734 |
 
 Per class on test: `lions_helmet` mAP@50 0.889, `rams_helmet` mAP@50 0.875 — no meaningful bias toward either team.
 
@@ -137,7 +137,13 @@ It reports which team has the ball, the offensive and defensive shape, pre-snap 
 
 **Snap detection looks for contrast, not a threshold.** A first-jump-above-baseline rule put the snap at frame 302 of 358 on one clip, latching onto a late camera pan and inverting the entire read. Scoring candidates on quiet-then-active contrast, and requiring the run-up to sit below the clip's median motion, moved it to frame 196.
 
-Reliability is uneven and worth stating plainly. Team identification, snap detection and motion detection lean on large, robust differences and hold up: offense correct on 8 of 8 clips, motion found on all 3 clips that have it and reported on none of the 5 that do not.
+Reliability is uneven and worth stating plainly.
+
+Team identification is the strongest of the rules. It is correct on all 8 clips, including both where the Lions have the ball. Worth noting the baseline though: 6 of the 8 clips are Rams-offense, so always answering "Rams" would score 6 of 8. The result that matters is the two Lions clips, and on those the two teams separate widely (10 px against 50 px of median pre-snap movement).
+
+**Motion detection is not yet trustworthy.** It missed a real motion outright on `lionsOffence02`, which surfaced only because a human watched the clip. Two causes: the search window covered just the 90 frames before the snap, and that play snaps at frame 350 with the motion starting earlier, so it was never considered; and a hardcoded 45 px floor rejected a clear 8.9x outlier for being numerically small. Both are fixed, but the fix is verified on 2 of 8 clips.
+
+There is no ground truth for any of this. Nobody has labelled which clips contain motion, who moved, or when, so there is no hit rate to quote and nothing to tune thresholds against. Every "this works" here means a human looked at it and agreed. That is the next thing worth fixing, and it costs about ten minutes of watching footage.
 
 **Formation counts are switched off, because they are not yet measuring anything.** The "on the line" count takes the five offensive players nearest the ball and counts them, so it returns 5 on every play by construction — it cannot report the 7 that are genuinely on the line when two receivers line up there. The defensive depth bands are closer to real, but use pixel thresholds, and a helmet shrinks with distance up the frame, so the same threshold means different yardage in different parts of the picture; linebackers land in the same bucket as the front.
 
